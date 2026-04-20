@@ -1,114 +1,156 @@
-// @ts-nocheck
-<
-script type = "module" >
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import {
-    getDatabase,
-    ref,
-    push,
-    onValue,
-    remove,
-    update
-} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-
+// CONFIGURA ESTO CON TU FIREBASE
 const firebaseConfig = {
-  apiKey: "AIzaSyAejrbK9T57bdc5MpYRzvioWdWUKyBOR4Q",
-  authDomain: "ventas-tecnologicas-fe784.firebaseapp.com",
-  databaseURL: "https://ventas-tecnologicas-fe784-default-rtdb.firebaseio.com",
-  projectId: "ventas-tecnologicas-fe784",
-  storageBucket: "ventas-tecnologicas-fe784.firebasestorage.app",
-  messagingSenderId: "673551715331",
-  appId: "1:673551715331:web:830ec279ac978ccf711236"
+    apiKey: "AIzaSyDNeN0AIcXw0aAiwc6S7472y7YMjHzbV94",
+    authDomain: "tienda-virtual-883ef.firebaseapp.com",
+    databaseURL: "https://tienda-virtual-883ef-default-rtdb.firebaseio.com",
+    projectId: "tienda-virtual-883ef",
+    storageBucket: "tienda-virtual-883ef.firebasestorage.app",
+    messagingSenderId: "871120614985",
+    appId: "1:871120614985:web:0274d91497b7f1e3d33198"
 };
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
 
-const productosRef = ref(db, "productos");
+// Inicializar Firebase
+firebase.initializeApp(firebaseConfig);
 
-function generarID() {
-    return Date.now().toString().slice(-6);
+const db = firebase.database();
+
+// LOGIN
+function login() {
+    let email = document.getElementById("email").value;
+    let password = document.getElementById("password").value;
+
+    firebase.auth().signInWithEmailAndPassword(email, password)
+        .then(() => alert("Bienvenido"))
+        .catch(err => alert(err.message));
 }
 
-// ✅ AGREGAR PRODUCTO
-window.agregarProducto = function() {
-    const nombre = document.getElementById('nombre').value.trim();
-    const imagen = document.getElementById('imagen').value.trim();
-    const descripcion = document.getElementById('descripcion').value.trim();
-    const precio = parseFloat(document.getElementById('precio').value);
-    const cantidad = parseInt(document.getElementById('cantidad').value);
-    const descuento = parseFloat(document.getElementById('descuento').value) || 0;
+// GUARDAR PRODUCTO
+function guardarProducto() {
+    let nombre = document.getElementById("nombre").value;
+    let precio = document.getElementById("precio").value;
+    let stock = document.getElementById("stock").value;
+    let tipo = document.getElementById("tipoNegocio").value;
 
-    if (!nombre || !imagen || !descripcion || !precio || !cantidad) {
-        alert('❗Completa todos los campos.');
-        return;
+    let id = Date.now();
+
+    db.ref("productos/" + id).set({
+        nombre,
+        precio,
+        stock,
+        tipo
+    });
+
+    alert("Producto guardado");
+}
+
+// MOSTRAR PRODUCTOS
+db.ref("productos").on("value", snapshot => {
+    let lista = document.getElementById("lista");
+    lista.innerHTML = "";
+
+    snapshot.forEach(item => {
+        let data = item.val();
+        lista.innerHTML += `<li>${data.nombre} - S/ ${data.precio} - Stock: ${data.stock}</li>`;
+    });
+});
+
+
+//función vender()
+function vender() {
+    let nombre = document.getElementById("productoVenta").value;
+    let cantidad = parseInt(document.getElementById("cantidadVenta").value);
+
+    db.ref("productos").once("value", snapshot => {
+        snapshot.forEach(item => {
+            let data = item.val();
+            let key = item.key;
+            let ventaId = Date.now();
+
+            db.ref("ventas/" + ventaId).set({
+                producto: data.nombre,
+                cantidad: cantidad,
+                total: cantidad * data.precio,
+                fecha: new Date().toLocaleString()
+            });
+
+            if (data.nombre === nombre) {
+
+                if (data.stock >= cantidad) {
+                    let nuevoStock = data.stock - cantidad;
+
+                    db.ref("productos/" + key).update({
+                        stock: nuevoStock
+                    });
+
+                    alert("Venta realizada");
+                } else {
+                    alert("Stock insuficiente");
+                }
+            }
+        });
+    });
+}
+
+db.ref("ventas").on("value", snapshot => {
+    let lista = document.getElementById("historial");
+    lista.innerHTML = "";
+
+    snapshot.forEach(item => {
+        let v = item.val();
+        lista.innerHTML += `<li>${v.producto} - ${v.cantidad} unidades - S/ ${v.total} - ${v.fecha}</li>`;
+    });
+});
+
+
+//TOTAL DE GANANCIAS
+
+db.ref("ventas").on("value", snapshot => {
+    let total = 0;
+
+    snapshot.forEach(item => {
+        total += item.val().total;
+    });
+
+    document.getElementById("totalGanado").innerText = "S/ " + total;
+});
+
+
+//Código del gráfico
+
+let chart;
+
+db.ref("ventas").on("value", snapshot => {
+
+    let productos = {};
+
+    snapshot.forEach(item => {
+        let v = item.val();
+
+        if (!productos[v.producto]) {
+            productos[v.producto] = 0;
+        }
+
+        productos[v.producto] += v.total;
+    });
+
+    let labels = Object.keys(productos);
+    let datos = Object.values(productos);
+
+    let ctx = document.getElementById("graficoVentas").getContext("2d");
+
+    if (chart) {
+        chart.destroy();
     }
 
-    const precioFinal = parseFloat((precio - (precio * (descuento / 100))).toFixed(2));
-
-    push(productosRef, {
-        id: generarID(),
-        nombre,
-        imagen,
-        descripcion,
-        precio,
-        cantidad,
-        stockMaximo: cantidad,
-        descuento,
-        precioFinal
+    chart = new Chart(ctx, {
+        type: "bar",
+        data: {
+            labels: labels,
+            datasets: [{
+                label: "Ventas (S/)",
+                data: datos
+            }]
+        }
     });
 
-    alert("✅ Producto guardado en Realtime Database");
-
-    ['nombre', 'imagen', 'descripcion', 'precio', 'cantidad', 'descuento']
-    .forEach(id => document.getElementById(id).value = '');
-};
-
-// ✅ MOSTRAR PRODUCTOS EN TIEMPO REAL
-function mostrarProductos() {
-    const contenedor = document.getElementById('listaProductos');
-
-    onValue(productosRef, (snapshot) => {
-                contenedor.innerHTML = "";
-
-                snapshot.forEach(child => {
-                            const p = child.val();
-                            const key = child.key;
-
-                            const div = document.createElement('div');
-                            div.className = 'producto';
-
-                            div.innerHTML = `
-          ${p.descuento > 0 ? `<div class="etiqueta-oferta">En oferta</div>` : ''}
-          <button onclick="eliminarProducto('${key}')" 
-          style="position: absolute; right: 10px; top: 10px;">🗑</button>
-
-          <img src="${p.imagen}" alt="${p.nombre}" />
-          <div class="producto-content">
-            <h3>${p.nombre}</h3>
-            <p>${p.descripcion}</p>
-            <p><strong>Precio:</strong> 
-            <span style="text-decoration: ${p.descuento > 0 ? 'line-through' : 'none'};">
-            ${p.precio} $
-            </span>
-            ${p.descuento > 0 ? `<br><strong style="color: orange;">Ahora: ${p.precioFinal} $</strong>` : ''}
-            </p>
-            <p><strong>Stock:</strong> ${p.cantidad}</p>
-            <p style="font-size: 12px; color: #aaa;">ID: ${p.id}</p>
-          </div>
-        `;
-
-        contenedor.appendChild(div);
-      });
-    });
-  }
-
-  // ✅ ELIMINAR PRODUCTO
-  window.eliminarProducto = function(key) {
-    if (!confirm("¿Eliminar producto?")) return;
-
-    remove(ref(db, "productos/" + key));
-  };
-
-  window.onload = mostrarProductos;
-
-</script>
+});
